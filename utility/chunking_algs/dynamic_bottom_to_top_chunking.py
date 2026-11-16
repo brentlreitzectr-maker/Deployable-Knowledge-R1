@@ -1,8 +1,10 @@
 # This chunking method starts with each of the sentences (or paragraphs) and continually merges if a certain similarity threshold is met
 
-from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import re
+
+from utility.model_loader import resolve_model
+
 
 def embed(text, model):
     return model.encode([text])[0]
@@ -11,10 +13,12 @@ def embed(text, model):
 def safe_sent_tokenize(text):
     return re.split(r'(?<=[.!?]) +', text.strip())
 
-def merge_sentences_bottom_up(text, similarity_threshold, model):
-    sentences = safe_sent_tokenize(text)
-    chunks = sentences[:]  # start each sentence as a chunk
-    
+def merge_sentences_bottom_up(text, similarity_threshold, model=None):
+    model = resolve_model(model)
+    chunks = [s for s in safe_sent_tokenize(text) if s]  # start each sentence as a chunk
+    if not chunks:
+        return []
+
     embeddings = [embed(s, model) for s in chunks]
 
     merged = True
@@ -29,23 +33,27 @@ def merge_sentences_bottom_up(text, similarity_threshold, model):
                 if sim > similarity_threshold:
                     # merge adjacent chunks
                     merged_chunk = chunks[i] + " " + chunks[i+1]
-                    merged_embedding = embed(merged_chunk)
                     new_chunks.append(merged_chunk)
-                    new_embeddings.append(merged_embedding)
+                    new_embeddings.append(embed(merged_chunk, model))
                     i += 2
                     merged = True
                     continue
             new_chunks.append(chunks[i])
             new_embeddings.append(embeddings[i])
             i += 1
-        final_chunks=[]
-        chunk_idx=0
-        for chunk in new_chunks:
+        chunks, embeddings = new_chunks, new_embeddings
+
+    final_chunks = []
+    offset = 0
+    for chunk_idx, chunk in enumerate(chunks):
+        start = text.find(chunk, offset)
+        if start == -1:
             start = text.find(chunk)
-            final_chunks.append(chunk,{
-                "chunk_idx": chunk_idx,
-                "char_range": (start, start + len(chunk)),
-                "num_sentences": chunk.count('.') + chunk.count('!') + chunk.count('?')
-            })
-            chunk_idx=chunk_idx+1
+        else:
+            offset = start + len(chunk)
+        final_chunks.append((chunk, {
+            "chunk_idx": chunk_idx,
+            "char_range": (start, start + len(chunk)),
+            "num_sentences": chunk.count('.') + chunk.count('!') + chunk.count('?')
+        }))
     return final_chunks

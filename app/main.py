@@ -6,11 +6,17 @@ from app.routes.ui_routes import router as ui_router
 from app.routes.api_chat_search import router as chat_search_router
 from app.routes.api_file_ingest import router as ingest_router
 
-app = FastAPI()
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app = FastAPI(title="Deployable Knowledge")
+# Absolute paths so the server works no matter which folder it is started from
+app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
 app.mount("/documents", StaticFiles(directory=UPLOAD_DIR), name="documents")
 
 # Register routes
 app.include_router(ui_router)
 app.include_router(chat_search_router)
 app.include_router(ingest_router)
+
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}

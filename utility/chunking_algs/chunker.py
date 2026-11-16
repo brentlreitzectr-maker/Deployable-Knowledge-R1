@@ -1,6 +1,5 @@
-from sentence_transformers import SentenceTransformer, util
-import spacy
-import pytextrank
+from sentence_transformers import util
+from utility.model_loader import resolve_model, get_spacy_nlp
 
 
 import re
@@ -40,7 +39,7 @@ def chunk_by_sentences(text, max_chars=500):
 
 
 def chunk_by_semantic_similarity(text, model_name="all-MiniLM-L6-v2", threshold=0.6):
-    model = SentenceTransformer(model_name)
+    model = resolve_model(model_name)
     sentences = safe_sent_tokenize(text)
     embeddings = model.encode(sentences, convert_to_tensor=True)
 
@@ -90,9 +89,8 @@ def split_text_by_length(text, max_chars=100000):
 
 
 def chunk_by_graph_rank(text, max_sentences=4):
-    nlp = spacy.load("en_core_web_trf")
-    nlp.add_pipe("textrank", last=True)  # Ensure PyTextRank is applied
-    nlp.max_length = 2_000_000  # Optional: Increase limit if you're confident in memory
+    # en_core_web_trf is not installed by default; use the shared small pipeline
+    nlp = get_spacy_nlp()
 
     text_chunks = split_text_by_length(text, max_chars=500_000)  # Safe size
     all_chunks = []
@@ -154,10 +152,8 @@ def safe_chunk_by_graph_rank(text, max_sentences=4, max_tokens_per_chunk=256, mo
         List[Tuple[str, Dict]]: List of tuples where each tuple contains the chunk text and its metadata.
     """
     # Load and configure spaCy pipeline
-    nlp = spacy.load("en_core_web_sm")
-    nlp.max_length = 2_000_000
-    nlp.add_pipe("textrank", last=True)
-    tokenizer = SentenceTransformer(model_name).tokenizer
+    nlp = get_spacy_nlp()
+    tokenizer = resolve_model(model_name).tokenizer
 
     # Optional: break very large input into subchunks to keep memory/token safe
     def split_text_by_length(text, max_tokens=2000):
@@ -227,7 +223,7 @@ def safe_chunk_by_graph_rank(text, max_sentences=4, max_tokens_per_chunk=256, mo
     return all_chunks
 
 def chunk_by_paragraphs(text, model_name="all-MiniLM-L6-v2", threshold=0.7):
-    model = SentenceTransformer(model_name)
+    model = resolve_model(model_name)
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     embeddings = model.encode(paragraphs, convert_to_tensor=True)
 

@@ -1,14 +1,19 @@
 sentence-transformers==4.1.0
 chromadb==1.0.12
+# chromadb 1.0.x telemetry breaks with posthog 6 ("capture() takes 1 positional argument")
+posthog<6
 pdfplumber==0.11.6
-nltk==3.9.1
 spacy==3.8.7
 pytextrank==3.3.0
+networkx>=3.2
 scikit-learn==1.7.0
 numpy==2.3.0
 fastapi==0.115.9
 uvicorn==0.34.3
 Jinja2==3.1.6
 python-multipart
+requests>=2.31
 httpx
 markdown2==2.5.3
+# spaCy English model used by the default "graph" chunker (installed once, works offline afterwards)
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl

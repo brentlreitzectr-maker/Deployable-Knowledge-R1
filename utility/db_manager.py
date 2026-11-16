@@ -1,13 +1,9 @@
 
-from config import CHROMA_DB_DIR, COLLECTION_NAME, EMBEDDING_MODEL_NAME, LOCAL_MODEL_PATH
-
-
-
-
+from config import CHROMA_DB_DIR, COLLECTION_NAME
 
 import uuid
 from typing import List, Optional
-from sentence_transformers import SentenceTransformer
+from utility.model_loader import get_embedding_model
 import chromadb
 from chromadb.config import Settings
 
@@ -24,8 +20,8 @@ db.add_segments(segments, strategy_name="top_down", source="contract_001.txt", t
     def __init__(self, persist_dir: str, collection_name: str):
         self.client = chromadb.PersistentClient(path=str(persist_dir), settings=Settings(anonymized_telemetry=False))        
         self.collection = self.client.get_or_create_collection(collection_name)
-        model_path = str(LOCAL_MODEL_PATH) if LOCAL_MODEL_PATH.exists() else EMBEDDING_MODEL_NAME
-        self.model = SentenceTransformer(model_path) 
+        # Shared, cached model (loaded from tmp_model/ when available)
+        self.model = get_embedding_model()
 
 
     def get_collection(self, name: str):

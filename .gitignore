@@ -36,6 +36,7 @@ chroma_db/
 # --- Extracted or parsed PDF text content ---
 parsed_texts/
 *.txt
+!requirements.txt
 
 # --- Query result data ---
 *.json

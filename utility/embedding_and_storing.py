@@ -87,7 +87,7 @@ def extract_text(file_path: Path) -> str:
         return parse_pdf(str(file_path))
     elif file_path.suffix.lower() == ".txt":
         text = file_path.read_text(encoding="utf-8")
-        return [{"page 1": 1, "text": text}]
+        return [{"page": 1, "text": text}]
     else:
         raise ValueError(f"Unsupported file type: {file_path.suffix}")
 
@@ -124,7 +124,9 @@ def embed_file(
         page_num = page.get("page")
         page_text = page.get("text", "")
         print(f"Page {page_num} length: {len(page_text)}")
-        
+        if not page_text.strip():
+            continue
+
         # Chunk page text separately
         chunks_with_meta = chunk_text(page_text, method=chunking_method)
         
@@ -150,6 +152,9 @@ def embed_file(
     all_chunks_with_meta = [
         (chunk, meta) for chunk, meta in all_chunks_with_meta if len(chunk.split()) >= 5
     ]
+
+    if not all_chunks_with_meta:
+        raise ValueError(f"No usable text found in {file_path.name} (scanned/image-only PDFs are not supported).")
 
     segments = [chunk for chunk, _ in all_chunks_with_meta]
     positions = [meta.get("char_range", (None, None)) for _, meta in all_chunks_with_meta]

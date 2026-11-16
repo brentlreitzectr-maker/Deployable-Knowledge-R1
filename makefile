@@ -1,74 +1,44 @@
-# Makefile for Deployable-Knowledge
+# Makefile for Deployable-Knowledge (Linux / macOS). On Windows use setup.ps1 / run.ps1.
 
-# === Environment Variables ===
+# === Offline-friendly environment for running ===
 export CHROMA_TELEMETRY_ENABLED=false
-export TRANSFORMERS_OFFLINE=1
-export HF_DATASETS_OFFLINE=1
+export ANONYMIZED_TELEMETRY=False
 
-# === Config ===
-VENV_NAME := venv
-PYTHON := python3
-PIP := $(VENV_NAME)/bin/pip
-UVICORN := $(VENV_NAME)/bin/uvicorn
-APP_MODULE := app.main:app
-MODEL_DIR := tmp_model
-MODEL_FILE := $(MODEL_DIR)/config.json
-STAMP_FILE := $(VENV_NAME)/.installed.ok
+# === Config (override with: make VAR=...) ===
+VENV_NAME ?= venv
+PYTHON    ?= python3
+PY        := $(VENV_NAME)/bin/python
+APP_MODULE?= app.main:app
+PORT      ?= 8000
+MODEL_FILE:= tmp_model/config.json
 
-.PHONY: all venv install setup-online run run-offline clean check-network
+.PHONY: setup venv install model run dev clean
 
-# === Master Setup ===
-all: venv install
+# ---------- ONE-TIME SETUP (needs internet) ----------
+setup: venv install model
+	@echo "Setup complete. Install Ollama, run 'ollama pull mistral:7b', then 'make run'."
 
-# === Virtual Environment ===
 venv:
-	$(PYTHON) -m venv $(VENV_NAME)
+	@test -x $(PY) || $(PYTHON) -m venv $(VENV_NAME)
+	$(PY) -m pip install --upgrade pip
 
-# === Dependency Installation ===
 install: venv
-	$(PIP) install -r requirements.txt && touch $(STAMP_FILE)
+	$(PY) -m pip install -r requirements.txt
 
-# === Online Setup ===
-setup-online: install
-	@if [ ! -f $(MODEL_FILE) ]; then \
-		echo "📥 Downloading model..."; \
-		mkdir -p $(MODEL_DIR); \
-		. $(VENV_NAME)/bin/activate && \
-		python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2').save('$(MODEL_DIR)')"; \
-	else \
-		echo "🗂️  Model already exists at $(MODEL_FILE). Skipping download."; \
-	fi
-	@. $(VENV_NAME)/bin/activate && python -m spacy download en_core_web_sm
+model:
+	$(PY) download_model.py
 
-# === Run Logic ===
+# ---------- RUN (works offline after setup) ----------
 run:
-	@if ping -c 1 -W 1 1.1.1.1 >/dev/null 2>&1; then \
-		echo "🌐 Network detected."; \
-		NEEDS_SETUP=0; \
-		if [ ! -f $(STAMP_FILE) ]; then \
-			echo "📦 Missing Python dependencies."; NEEDS_SETUP=1; \
-		fi; \
-		if [ ! -f $(MODEL_FILE) ]; then \
-			echo "📁 Missing model files."; NEEDS_SETUP=1; \
-		fi; \
-		if [ $$NEEDS_SETUP -eq 1 ]; then \
-			echo "⚙️  Running full setup..."; \
-			$(MAKE) setup-online; \
-		else \
-			echo "✅ All requirements and model found. Skipping setup."; \
-		fi; \
-	else \
-		echo "🚫 No network. Running in offline mode..."; \
-	fi; \
-	$(MAKE) run-offline
+	@test -x $(PY) || (echo "No venv. Run 'make setup' first."; exit 1)
+	@test -f $(MODEL_FILE) || (echo "Embedding model missing. Run 'make setup' (needs internet once)."; exit 1)
+	TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 \
+	$(PY) -m uvicorn $(APP_MODULE) --host 127.0.0.1 --port $(PORT)
 
-# === Run Without Setup ===
-run-offline:
-	PYTHONPATH=. $(UVICORN) $(APP_MODULE) --reload
+dev:
+	TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 \
+	$(PY) -m uvicorn $(APP_MODULE) --host 127.0.0.1 --port $(PORT) --reload
 
-# === Cleanup ===
+# ---------- housekeeping ----------
 clean:
-	rm -rf $(VENV_NAME)
-	rm -rf chroma/
-	rm -rf $(MODEL_DIR)
-
+	rm -rf $(VENV_NAME) chroma_db/

@@ -7,9 +7,25 @@ from sklearn.preprocessing import StandardScaler
 import numpy as np
 
 from utility.embedding_and_storing import db
-from config import OLLAMA_URL, OLLAMA_MODEL
+from config import OLLAMA_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT
 
 router = APIRouter()
+
+
+def ollama_error_message(exc: Exception) -> str:
+    """Turn a requests/Ollama failure into a message a user can act on."""
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return (f"Could not reach Ollama at {OLLAMA_URL}. Make sure Ollama is installed and running "
+                f"(`ollama serve`), and that the model is pulled (`ollama pull {OLLAMA_MODEL}`).")
+    if isinstance(exc, requests.exceptions.HTTPError) and exc.response is not None:
+        try:
+            detail = exc.response.json().get("error", exc.response.text)
+        except ValueError:
+            detail = exc.response.text
+        if exc.response.status_code == 404:
+            return f"Ollama does not have model '{OLLAMA_MODEL}'. Run: ollama pull {OLLAMA_MODEL}  ({detail})"
+        return f"Ollama returned HTTP {exc.response.status_code}: {detail}"
+    return str(exc)
 
 # ==============================
 # 🧠 In-memory per-user memory
@@ -34,7 +50,7 @@ def update_summary(old_summary: str, user_msg: str, assistant_msg: str) -> str:
             "model": OLLAMA_MODEL,
             "prompt": prompt,
             "stream": False
-        })
+        }, timeout=OLLAMA_TIMEOUT)
         return response.json().get("response", old_summary)
     except Exception:
         return old_summary
@@ -130,7 +146,17 @@ async def chat(
             Assistant:"""
 
         # Generate response
-        response = requests.post(OLLAMA_URL, json={"model": OLLAMA_MODEL, "prompt": prompt})
+        # stream=False is required here: Ollama streams NDJSON by default,
+        # which made response.json() fail and /chat always return an error.
+        try:
+            response = requests.post(
+                OLLAMA_URL,
+                json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
+                timeout=OLLAMA_TIMEOUT,
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            return JSONResponse(content={"response": f"[Error: {ollama_error_message(e)}]", "context": context_blocks})
         chatbot_response = response.json().get("response", "[Error: No response]")
 
         # Format response
@@ -275,14 +301,20 @@ async def chat_stream(
 
         # Streaming response
         def event_stream():
-            response = requests.post(
-                OLLAMA_URL,
-                json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": True},
-                stream=True
-            )
+            yield b"<strong>Assistant:</strong><br>"
+            try:
+                response = requests.post(
+                    OLLAMA_URL,
+                    json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": True},
+                    stream=True,
+                    timeout=OLLAMA_TIMEOUT,
+                )
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                yield f"*[Error: {ollama_error_message(e)}]*".encode("utf-8")
+                return
 
             assistant_msg = ""
-            yield b"<strong>Assistant:</strong><br>"
 
             for line in response.iter_lines(decode_unicode=True):
                 if not line:

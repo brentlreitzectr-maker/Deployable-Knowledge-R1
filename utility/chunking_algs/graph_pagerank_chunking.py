@@ -1,16 +1,18 @@
 import networkx as nx
 from sklearn.metrics.pairwise import cosine_similarity
-from sentence_transformers import SentenceTransformer
 import numpy as np
 import re
+from utility.model_loader import resolve_model
 
 def safe_sent_tokenize(text):
     return re.split(r'(?<=[.!?]) +', text.strip())
 
 def pagerank_chunk_text(text, model_name="all-mpnet-base-v2", sim_threshold=0.5, top_k=5, expansion_threshold=0.5):
     # ---- STEP 1: Preprocessing ----
-    sentences = safe_sent_tokenize(text)
-    model = SentenceTransformer(model_name)
+    sentences = [s for s in safe_sent_tokenize(text) if s]
+    if not sentences:
+        return []
+    model = resolve_model(model_name)
     embeddings = model.encode(sentences, convert_to_tensor=False)
 
 
@@ -69,10 +71,12 @@ def pagerank_chunk_text(text, model_name="all-mpnet-base-v2", sim_threshold=0.5,
         new_chunk=" ".join([sentences[i] for i in chunk])
         first_idx=chunk[0]
         start_char, _ = sentence_ranges[first_idx]
-        chunks.append(new_chunk, {
+        _, end_char = sentence_ranges[chunk[-1]]
+        chunks.append((new_chunk, {
             "chunk_idx": chunk_idx,
+            "char_range": (start_char, end_char),
             "num_sentences": len(chunk)
-        })
+        }))
         chunk_idx=chunk_idx+1
 
 
